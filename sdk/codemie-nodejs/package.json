@@ -1,0 +1,64 @@
+{
+  "name": "codemie-sdk",
+  "version": "0.3.0",
+  "description": "CodeMie SDK for Node.js",
+  "author": "CodeMie",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codemie-ai/codemie-sdk.git",
+    "directory": "sdk/codemie-nodejs"
+  },
+  "homepage": "https://github.com/codemie-ai/codemie-sdk/tree/main/sdk/codemie-nodejs#readme",
+  "bugs": {
+    "url": "https://github.com/codemie-ai/codemie-sdk/issues"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "prepare": "npm run build",
+    "prepack": "npm run test && npm run lint",
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean --sourcemap",
+    "format": "biome format --write ./src ./tests",
+    "lint": "biome lint --error-on-warnings ./src",
+    "test": "jest --config jest.config.mjs",
+    "test:e2e": "jest --config jest.e2e.config.mjs --runInBand"
+  },
+  "dependencies": {
+    "axios": "1.15.0",
+    "form-data": "4.0.3",
+    "zod": "4.3.5"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@jest/globals": "29.7.0",
+    "@jest/types": "29.6.3",
+    "@sinonjs/commons": "3.0.1",
+    "@types/jest": "29.5.14",
+    "@types/node": "22.15.34",
+    "dotenv": "16.6.1",
+    "jest": "29.7.0",
+    "rimraf": "6.0.1",
+    "ts-jest": "29.4.0",
+    "ts-node": "10.9.2",
+    "tsup": "8.5.0",
+    "typescript": "5.8.3"
+  },
+  "files": [
+    "dist",
+    "package.json",
+    "README.md"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "import": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "require": {
+      "types": "./dist/index.d.cts",
+      "require": "./dist/index.cjs"
+    }
+  }
+}

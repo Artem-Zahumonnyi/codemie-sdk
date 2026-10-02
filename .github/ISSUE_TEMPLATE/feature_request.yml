@@ -1,0 +1,69 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for a CodeMie SDK
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please provide details below.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: This is a feature request, not a bug report
+          required: true
+
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: Which SDK?
+      options:
+        - Python (codemie-sdk-python)
+        - Node.js (codemie-sdk)
+        - Both
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem would this feature solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+    validations:
+      required: false
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example Usage
+      description: Show how you would like to use the feature
+      render: python
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Implementation
+      options:
+        - label: I would be willing to implement this feature and submit a PR
+          required: false

@@ -1,0 +1,178 @@
+import { describe, it, expect } from "@jest/globals";
+import { WorkflowMapper } from "../../../src/mappers/workflow.mapper";
+import type { WorkflowResponse, WorkflowExecutionResponse } from "../../../src/models";
+import { WorkflowMode, ExecutionStatus } from "../../../src/models/workflow";
+
+describe("WorkflowMapper", () => {
+  describe("mapWorkflowResponse", () => {
+    it("should correctly map all workflow fields", () => {
+      // Arrange
+      const apiResponse: WorkflowResponse = {
+        id: "workflow-123",
+        project: "project-1",
+        name: "Test Workflow",
+        description: "A test workflow",
+        yaml_config: "config: test",
+        mode: WorkflowMode.SEQUENTIAL,
+        shared: true,
+        icon_url: "https://example.com/icon.png",
+        date: "2025-01-01",
+        update_date: "2025-01-02",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+      };
+
+      // Act
+      const result = WorkflowMapper.mapWorkflowResponse(apiResponse);
+
+      // Assert
+      expect(result).toEqual({
+        id: "workflow-123",
+        project: "project-1",
+        name: "Test Workflow",
+        description: "A test workflow",
+        yaml_config: "config: test",
+        mode: WorkflowMode.SEQUENTIAL,
+        shared: true,
+        icon_url: "https://example.com/icon.png",
+        created_date: "2025-01-01",
+        update_date: "2025-01-02",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+      });
+    });
+
+    it("should handle empty values", () => {
+      // Arrange
+      const apiResponse: WorkflowResponse = {
+        id: "workflow-123",
+        project: "project-1",
+        name: "",
+        description: "",
+        yaml_config: "",
+        mode: WorkflowMode.SEQUENTIAL,
+        shared: false,
+        icon_url: "",
+        date: "",
+        update_date: "",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+      };
+
+      // Act
+      const result = WorkflowMapper.mapWorkflowResponse(apiResponse);
+
+      // Assert
+      expect(result).toEqual({
+        id: "workflow-123",
+        project: "project-1",
+        name: "",
+        description: "",
+        yaml_config: "",
+        mode: WorkflowMode.SEQUENTIAL,
+        shared: false,
+        icon_url: "",
+        created_date: "",
+        update_date: "",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+      });
+    });
+  });
+
+  describe("mapWorkflowExecutionResponse", () => {
+    it("should correctly map all execution fields", () => {
+      // Arrange
+      const apiResponse: WorkflowExecutionResponse = {
+        id: "exec-123",
+        execution_id: "execution-123",
+        workflow_id: "workflow-123",
+        overall_status: ExecutionStatus.SUCCEEDED,
+        date: "2025-01-01",
+        prompt: "test prompt",
+        updated_date: "2025-01-02",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+        tokens_usage: {
+          input_tokens: 50,
+          output_tokens: 50,
+        },
+      };
+
+      // Act
+      const result = WorkflowMapper.mapWorkflowExecutionResponse(apiResponse);
+
+      // Assert
+      expect(result).toEqual({
+        id: "exec-123",
+        execution_id: "execution-123",
+        workflow_id: "workflow-123",
+        overall_status: ExecutionStatus.SUCCEEDED,
+        created_date: "2025-01-01",
+        prompt: "test prompt",
+        updated_date: "2025-01-02",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+        tokens_usage: {
+          input_tokens: 50,
+          output_tokens: 50,
+        },
+      });
+    });
+
+    it("should handle empty values", () => {
+      // Arrange
+      const apiResponse: WorkflowExecutionResponse = {
+        id: "exec-123",
+        execution_id: "execution-123",
+        workflow_id: "workflow-123",
+        overall_status: ExecutionStatus.NOT_STARTED,
+        date: "",
+        prompt: "",
+        updated_date: "",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+        tokens_usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+        },
+      };
+
+      // Act
+      const result = WorkflowMapper.mapWorkflowExecutionResponse(apiResponse);
+
+      // Assert
+      expect(result).toEqual({
+        id: "exec-123",
+        execution_id: "execution-123",
+        workflow_id: "workflow-123",
+        overall_status: ExecutionStatus.NOT_STARTED,
+        created_date: "",
+        prompt: "",
+        updated_date: "",
+        created_by: {
+          username: "user1",
+          name: "User One",
+        },
+        tokens_usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+        },
+      });
+    });
+  });
+});

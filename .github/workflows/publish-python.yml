@@ -1,0 +1,105 @@
+name: Publish Python SDK
+
+on:
+  push:
+    tags: ['python-v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and check only; do not publish'
+        type: boolean
+        default: true
+      publish:
+        description: 'Type "publish" to confirm a real release (also requires dry_run off)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/codemie-python
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Setup Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Lint
+        run: poetry run ruff check .
+
+      - name: Unit tests
+        run: poetry run pytest tests/
+
+      - name: Read package version
+        id: pkg
+        run: echo "version=$(poetry version --short)" >> "$GITHUB_OUTPUT"
+
+      - name: Check version against PyPI
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: python3 ../../scripts/release/check_version.py --ecosystem pypi --name codemie-sdk-python --version "$VERSION"
+
+      - name: Require a package tag for a real publish
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish'
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/python-v*) ;;
+            *) echo "A real publish must run from a python-v* tag, not $GITHUB_REF"; exit 1 ;;
+          esac
+
+      - name: Check tag matches version
+        if: github.ref_type == 'tag'
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: python3 ../../scripts/release/check_version.py --ecosystem pypi --name codemie-sdk-python --version "$VERSION" --tag "$GITHUB_REF_NAME"
+
+      - name: Build package
+        run: poetry build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-dist
+          path: sdk/codemie-python/dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: verify
+    if: >-
+      github.event_name == 'push' || (github.event_name == 'workflow_dispatch'
+      && inputs.dry_run == false && inputs.publish == 'publish'
+      && startsWith(github.ref, 'refs/tags/python-v'))
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/

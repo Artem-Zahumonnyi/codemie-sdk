@@ -1,0 +1,108 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in a CodeMie SDK
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below.
+        Do not include credentials or customer data. To report a security problem, use the private security advisory link on the issue chooser page.
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I am using the latest version of the SDK
+          required: true
+
+  - type: dropdown
+    id: sdk
+    attributes:
+      label: Which SDK?
+      options:
+        - Python (codemie-sdk-python)
+        - Node.js (codemie-sdk)
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SDK Version
+      placeholder: "0.2.15"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      placeholder: |
+        1. Create a client with '...'
+        2. Call '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include error messages if any)
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Python or Node.js Version
+      placeholder: "Python 3.12.4 or v20.11.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Linux
+        - Windows (WSL)
+        - Windows (native)
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Redact API keys, tokens and hostnames
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+    validations:
+      required: false
