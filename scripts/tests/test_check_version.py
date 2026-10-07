@@ -100,26 +100,104 @@ def test_urls():
     assert seen == ["https://pypi.org/pypi/a-b/json", "https://registry.npmjs.org/a-b"]
 
 
-def test_tag_matching():
-    cv.check_tag("python-v1.2.3", "1.2.3")
-    cv.check_tag("node-v1.2.3", "1.2.3")
-    cv.check_tag("python-v1.2.3", "1.2.3", "python")
+@pytest.mark.parametrize(
+    "eco,tag,base,expected",
+    [
+        ("pypi", "python-v0.1.665", "0.1.0", "0.1.665"),
+        ("npm", "node-v0.1.665", "0.1.0", "0.1.665"),
+        ("pypi", "python-v0.2.0", "0.2", "0.2.0"),
+        ("npm", "node-v1.0.7", "1.0.0", "1.0.7"),
+    ],
+)
+def test_tag_gives_the_version(eco, tag, base, expected):
+    assert cv.version_from_tag(eco, tag, base) == expected
+
+
+@pytest.mark.parametrize(
+    "eco,tag",
+    [
+        ("pypi", "node-v0.1.665"),
+        ("npm", "python-v0.1.665"),
+        ("pypi", "v0.1.665"),
+        ("pypi", "python-0.1.665"),
+        ("pypi", "python-v0.1"),
+        ("pypi", "python-v0.1.665rc1"),
+        ("npm", "node-v0.1.665-beta.1"),
+        ("pypi", "python-v0.1.665.1"),
+        ("pypi", "python-v0.1.0665"),
+        ("pypi", "python-v0.1.665 "),
+        ("pypi", "python-v0.1.665\n"),
+        ("npm", "node-v0.1.665\n"),
+        ("pypi", "python-v0.1.\u0666"),
+        ("pypi", "python-v0.1.6\u0666"),
+        ("npm", "node-v\u0660.1.5"),
+        ("pypi", "refs/tags/python-v0.1.665"),
+        ("pypi", ""),
+    ],
+)
+def test_bad_tag_fails(eco, tag):
     with pytest.raises(cv.VersionError):
-        cv.check_tag("node-v1.2.3", "1.2.4")
+        cv.version_from_tag(eco, tag, "0.1.0")
+
+
+def test_tag_on_another_line_than_the_manifest_fails():
+    with pytest.raises(cv.VersionError, match="line"):
+        cv.version_from_tag("pypi", "python-v0.2.3", "0.1.0")
+    with pytest.raises(cv.VersionError, match="line"):
+        cv.version_from_tag("npm", "node-v1.0.0", "0.1.0")
+
+
+@pytest.mark.parametrize("base", ["0", "0.1.5", "0.1.0-beta", "1.2.3.4", "v0.1", "", "x.y", "\u0660.1", "0.\u0661.0"])
+def test_tag_rejects_bad_base(base):
+    with pytest.raises(cv.VersionError, match="base"):
+        cv.version_from_tag("pypi", "python-v0.1.665", base)
+
+
+def test_tag_unknown_ecosystem_fails():
     with pytest.raises(cv.VersionError):
-        cv.check_tag("v1.2.3", "1.2.3")
+        cv.version_from_tag("cargo", "cargo-v0.1.1", "0.1.0")
+
+
+def test_tag_version_must_still_beat_the_registry():
+    ok = cv.version_from_tag("pypi", "python-v0.1.664", "0.1.0")
     with pytest.raises(cv.VersionError):
-        cv.check_tag("node-v1.2.3", "1.2.3", "python")
+        cv.check("pypi", "x", ok, fetch=pypi("0.1.664"))
+    with pytest.raises(cv.VersionError):
+        cv.check("pypi", "x", ok, fetch=pypi("0.1.700"))
 
 
 def run_cli(*args):
     return subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True, text=True)
 
 
-def test_cli_tag_mismatch_exits_1():
-    r = run_cli("--ecosystem", "npm", "--name", "x", "--version", "1.0.0", "--tag", "node-v2.0.0")
-    assert r.returncode == 1
-    assert "tag" in r.stderr.lower()
+def test_cli_requires_tag_or_version():
+    assert run_cli("--ecosystem", "npm", "--name", "x").returncode == 2
+
+
+def test_cli_tag_needs_base():
+    assert run_cli("--ecosystem", "npm", "--name", "x", "--tag", "node-v0.1.1").returncode == 2
+
+
+def test_cli_base_alone_is_gone():
+    assert run_cli("--ecosystem", "npm", "--name", "x", "--base", "0.1.0").returncode == 2
+
+
+def test_cli_tag_prints_only_the_version(capsys):
+    assert cv.main(["--ecosystem", "pypi", "--name", "x", "--tag", "python-v0.1.4", "--base", "0.1.0"]) == 0
+    assert capsys.readouterr().out == "0.1.4\n"
+
+
+def test_cli_tag_does_not_touch_the_network(monkeypatch):
+    def boom(url):
+        raise AssertionError("network used")
+
+    monkeypatch.setattr(cv, "_fetch_json", boom)
+    assert cv.main(["--ecosystem", "npm", "--name", "x", "--tag", "node-v0.1.4", "--base", "0.1.0"]) == 0
+
+
+def test_cli_bad_tag_exits_1(capsys):
+    assert cv.main(["--ecosystem", "pypi", "--name", "x", "--tag", "node-v0.1.4", "--base", "0.1.0"]) == 1
+    assert "tag" in capsys.readouterr().err
 
 
 def test_cli_network_error_exits_1(monkeypatch, capsys):
@@ -141,7 +219,7 @@ def test_cli_bad_json_exits_1(monkeypatch):
 
 def test_cli_success_exits_0(monkeypatch):
     monkeypatch.setattr(cv, "_fetch_json", lambda url: None)
-    assert cv.main(["--ecosystem", "pypi", "--name", "x", "--version", "1.0.0", "--tag", "python-v1.0.0"]) == 0
+    assert cv.main(["--ecosystem", "pypi", "--name", "x", "--version", "1.0.0"]) == 0
 
 
 def http_error(code):
@@ -167,10 +245,16 @@ def test_real_fetch_server_error_fails_closed(monkeypatch):
     assert cv.main(["--ecosystem", "pypi", "--name", "x", "--version", "1.0.0"]) == 1
 
 
-def test_unparseable_registry_versions_are_skipped_with_warning(capsys):
-    assert cv.check("pypi", "x", "2.0.0", fetch=pypi("1.0.0", "legacy-build")) == "1.0.0"
+@pytest.mark.parametrize(
+    "eco,fetch",
+    [("pypi", pypi("1.0.0", "legacy-build")), ("npm", npm("1.0.0", "1.0")), ("npm", npm("garbage"))],
+)
+def test_unparseable_registry_version_fails_closed(eco, fetch):
+    with pytest.raises(cv.VersionError, match="unparseable"):
+        cv.check(eco, "x", "2.0.0", fetch=fetch)
+
+
+def test_cli_unparseable_registry_version_exits_1(monkeypatch, capsys):
+    monkeypatch.setattr(cv, "_fetch_json", pypi("1.0.0", "legacy-build"))
+    assert cv.main(["--ecosystem", "pypi", "--name", "x", "--version", "2.0.0"]) == 1
     assert "legacy-build" in capsys.readouterr().err
-    assert cv.check("npm", "x", "2.0.0", fetch=npm("1.0.0", "1.0")) == "1.0.0"
-    assert "1.0" in capsys.readouterr().err
-    with pytest.raises(cv.VersionError):
-        cv.check("npm", "x", "1.0.0", fetch=npm("1.0.0", "garbage"))
