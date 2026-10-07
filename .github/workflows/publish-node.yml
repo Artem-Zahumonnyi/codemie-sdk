@@ -1,10 +1,14 @@
 name: Publish Node.js SDK
 
 on:
-  push:
-    tags: ['node-v*']
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
+      tag:
+        description: 'Release tag to check or publish, for example node-v0.1.665'
+        type: string
+        required: true
       dry_run:
         description: 'Build and check only; do not publish'
         type: boolean
@@ -17,12 +21,20 @@ on:
 permissions:
   contents: read
 
+# One run per tag. A fixed group would keep only the newest pending run and cancel the ones in between.
+concurrency:
+  group: publish-node-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
   verify:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || startsWith(github.event.release.tag_name, 'node-v')
     name: Verify and pack
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.pkg.outputs.version }}
+      version: ${{ steps.version.outputs.version }}
     defaults:
       run:
         working-directory: sdk/codemie-nodejs
@@ -31,11 +43,54 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: '20'
+
+      - name: Require the release commit on main
+        if: github.event_name == 'release'
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "The release commit $GITHUB_SHA is not on main"; exit 1
+          fi
+
+      - name: Require the tag on the dispatched commit
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          TAGGED=$(git rev-parse -q --verify "refs/tags/$RELEASE_TAG^{commit}") || {
+            echo "Tag $RELEASE_TAG does not exist"; exit 1
+          }
+          if [ "$TAGGED" != "$GITHUB_SHA" ]; then
+            echo "Tag $RELEASE_TAG points to $TAGGED, not to the dispatched commit $GITHUB_SHA"; exit 1
+          fi
+
+      - name: Require main for a real publish
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish'
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "A real publish must run from main, not $GITHUB_REF"; exit 1
+          fi
+
+      # The tag names the version. The manifest holds only the base line (MAJOR.MINOR) and the tag must be on it.
+      - name: Read the version from the tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          VERSION=$(python3 ../../scripts/release/check_version.py --ecosystem npm --name codemie-sdk --tag "$RELEASE_TAG" --base "$BASE")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing codemie-sdk $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stamp the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
 
       # The Node.js SDK has no committed lock file, so `npm ci` cannot be used.
       - name: Install dependencies
@@ -50,31 +105,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Read package version
-        id: pkg
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
       - name: Check version against npm
         env:
-          VERSION: ${{ steps.pkg.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: python3 ../../scripts/release/check_version.py --ecosystem npm --name codemie-sdk --version "$VERSION"
 
-      - name: Require a package tag for a real publish
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish'
-        run: |
-          case "$GITHUB_REF" in
-            refs/tags/node-v*) ;;
-            *) echo "A real publish must run from a node-v* tag, not $GITHUB_REF"; exit 1 ;;
-          esac
-
-      - name: Check tag matches version
-        if: github.ref_type == 'tag'
-        env:
-          VERSION: ${{ steps.pkg.outputs.version }}
-        run: python3 ../../scripts/release/check_version.py --ecosystem npm --name codemie-sdk --version "$VERSION" --tag "$GITHUB_REF_NAME"
-
       - name: Pack tarball
-        run: npm pack --pack-destination "$RUNNER_TEMP/pack" && cp "$RUNNER_TEMP"/pack/*.tgz "$GITHUB_WORKSPACE/"
+        run: mkdir -p "$RUNNER_TEMP/pack" && npm pack --pack-destination "$RUNNER_TEMP/pack" && cp "$RUNNER_TEMP"/pack/*.tgz "$GITHUB_WORKSPACE/"
 
       - name: Upload tarball
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -87,12 +124,20 @@ jobs:
     name: Publish to npm
     needs: verify
     if: >-
-      github.event_name == 'push' || (github.event_name == 'workflow_dispatch'
+      github.event_name == 'release' || (github.event_name == 'workflow_dispatch'
       && inputs.dry_run == false && inputs.publish == 'publish'
-      && startsWith(github.ref, 'refs/tags/node-v'))
+      && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     environment: release
     steps:
+      # Only the version script is needed. The registry is checked again here because this job can wait for
+      # approval and another release may have landed since `verify`. Checkout comes first: it clears the workspace.
+      - name: Check out the version script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/release
+
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
@@ -105,14 +150,12 @@ jobs:
           name: node-package
           path: package/
 
+      - name: Check the version against the registry again
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: python3 scripts/release/check_version.py --ecosystem npm --name codemie-sdk --version "$VERSION"
+
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: |
-          # A pre-release version must not take the default `latest` dist-tag.
-          if [[ "$VERSION" == *-* ]]; then
-            npm publish package/codemie-sdk-*.tgz --access public --tag next
-          else
-            npm publish package/codemie-sdk-*.tgz --access public
-          fi
+        run: npm publish package/codemie-sdk-*.tgz --access public

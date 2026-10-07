@@ -17,6 +17,8 @@ Basic usage:
     >>> assistants = client.assistants.list()
 """
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 from .client.client import CodeMieClient
 from .models.vendor_assistant import (
     VendorType,
@@ -156,6 +158,7 @@ from .models.integration import (
     TransferMode,
     TransferItem,
     TransferSettingsResponse,
+    TypeOfIntegration,
 )
 from .models.a2a import (
     AgentCard,
@@ -166,7 +169,10 @@ from .models.a2a import (
 )
 from .services.a2a import A2AService
 
-__version__ = "0.2.15"
+try:
+    __version__ = _pkg_version("codemie-sdk-python")
+except PackageNotFoundError:  # running from a source tree that is not installed
+    __version__ = "0+unknown"
 __all__ = [
     "CodeMieClient",
     "VendorType",
@@ -284,6 +290,7 @@ __all__ = [
     "TransferMode",
     "TransferItem",
     "TransferSettingsResponse",
+    "TypeOfIntegration",
     "AgentCard",
     "AgentProvider",
     "AgentCapabilities",

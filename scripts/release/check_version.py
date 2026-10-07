@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Refuse a release unless its version is strictly higher than everything on the registry."""
+"""Read the release version from a release tag, and refuse a release that is not strictly higher.
+
+The tag names the package and the version, for example `python-v0.1.665`. The manifest holds only
+the base line (MAJOR.MINOR), and the tag must be on that line. The registry gate then checks that
+the version is higher than everything already published.
+"""
 from __future__ import annotations
 
 import argparse
@@ -14,8 +19,6 @@ URLS = {
     "pypi": "https://pypi.org/pypi/{name}/json",
     "npm": "https://registry.npmjs.org/{name}",
 }
-TAG_PREFIX = {"pypi": "python-v", "npm": "node-v"}
-ECOSYSTEM_ALIASES = {"python": "pypi", "node": "npm"}
 
 
 class VersionError(Exception):
@@ -124,7 +127,6 @@ def _published(ecosystem: str, payload) -> list[str]:
 
 def check(ecosystem: str, name: str, version: str, fetch=_fetch_json) -> str:
     """Return the highest published version ("" if none); raise VersionError unless `version` is higher."""
-    ecosystem = ECOSYSTEM_ALIASES.get(ecosystem, ecosystem)
     if ecosystem not in URLS:
         raise VersionError(f"unknown ecosystem: {ecosystem!r}")
     _compare(ecosystem, version, version)  # validates our own version
@@ -134,13 +136,12 @@ def check(ecosystem: str, name: str, version: str, fetch=_fetch_json) -> str:
     best = ""
     for v in _published(ecosystem, payload):
         try:
-            if not best or _compare(ecosystem, v, best) > 0:
-                _compare(ecosystem, v, v)
-                best = v
+            _compare(ecosystem, v, v)
         except VersionError:
-            # Legacy registry entries that do not parse cannot be ordered; say so.
-            print(f"warning: skipping unparseable published version {v!r}", file=sys.stderr)
-            continue
+            # A version that cannot be ordered could hide a higher one: fail closed.
+            raise VersionError(f"unparseable published version {v!r} of {name}: cannot compare") from None
+        if not best or _compare(ecosystem, v, best) > 0:
+            best = v
     if best and _compare(ecosystem, version, best) <= 0:
         raise VersionError(
             f"version {version} of {name} is not higher than the highest published version {best}"
@@ -148,28 +149,53 @@ def check(ecosystem: str, name: str, version: str, fetch=_fetch_json) -> str:
     return best
 
 
-def check_tag(tag: str, version: str, ecosystem: str | None = None) -> None:
-    if ecosystem is not None:
-        ecosystem = ECOSYSTEM_ALIASES.get(ecosystem, ecosystem)
-    prefixes = [TAG_PREFIX[ecosystem]] if ecosystem in TAG_PREFIX else list(TAG_PREFIX.values())
-    for prefix in prefixes:
-        if tag.startswith(prefix):
-            if tag[len(prefix):] != version:
-                raise VersionError(f"tag {tag} does not match manifest version {version}")
-            return
-    raise VersionError(f"tag {tag} must start with one of: {', '.join(prefixes)}")
+_BASE = re.compile(r"(\d+)\.(\d+)(?:\.0)?", re.ASCII)
+_TAG_PREFIX = {"pypi": "python-v", "npm": "node-v"}
+_NUM = r"(0|[1-9]\d*)"
+_TAG_VERSION = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}", re.ASCII)
+
+
+def version_from_tag(ecosystem: str, tag: str, base: str) -> str:
+    """Return the version named by `tag` (`python-vX.Y.Z` or `node-vX.Y.Z`).
+
+    `base` is the manifest version and must be MAJOR.MINOR or MAJOR.MINOR.0 (no pre-release).
+    The tag must be a plain release on the same MAJOR.MINOR line. No network is used.
+    """
+    if ecosystem not in URLS:
+        raise VersionError(f"unknown ecosystem: {ecosystem!r}")
+    m = _BASE.fullmatch(base.strip())
+    if not m:
+        raise VersionError(f"base version must be MAJOR.MINOR or MAJOR.MINOR.0, got {base!r}")
+    prefix = _TAG_PREFIX[ecosystem]
+    version = tag[len(prefix):] if tag.startswith(prefix) else ""
+    r = _TAG_VERSION.fullmatch(version)
+    if not r:
+        raise VersionError(f"tag must look like {prefix}MAJOR.MINOR.PATCH, got {tag!r}")
+    if (int(r[1]), int(r[2])) != (int(m[1]), int(m[2])):
+        raise VersionError(
+            f"tag {tag} is not on the manifest line {int(m[1])}.{int(m[2])}: "
+            "raise the base in the manifest first"
+        )
+    return version
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--ecosystem", required=True, choices=["pypi", "npm"])
     p.add_argument("--name", required=True)
-    p.add_argument("--version", required=True)
-    p.add_argument("--tag")
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--tag", help="release tag (python-vX.Y.Z or node-vX.Y.Z); print the version it names")
+    mode.add_argument("--version", help="version to check against the registry")
+    p.add_argument("--base", help="manifest version (MAJOR.MINOR[.0]); required with --tag")
     args = p.parse_args(argv)
+    if args.tag and not args.base:
+        p.error("--tag needs --base")
+    if args.base and not args.tag:
+        p.error("--base only works with --tag")
     try:
         if args.tag:
-            check_tag(args.tag, args.version, args.ecosystem)
+            print(version_from_tag(args.ecosystem, args.tag, args.base))
+            return 0
         latest = check(args.ecosystem, args.name, args.version, fetch=_fetch_json)
     except VersionError as e:
         print(f"error: {e}", file=sys.stderr)
