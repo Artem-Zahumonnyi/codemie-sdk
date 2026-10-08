@@ -50,15 +50,9 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Require the release commit on main
-        if: github.event_name == 'release'
-        run: |
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "The release commit $GITHUB_SHA is not on main"; exit 1
-          fi
-
-      - name: Require the tag on the dispatched commit
-        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish'
+      - name: Require the tag on the released commit
+        id: tagcommit
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false && inputs.publish == 'publish')
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
@@ -66,7 +60,17 @@ jobs:
             echo "Tag $RELEASE_TAG does not exist"; exit 1
           }
           if [ "$TAGGED" != "$GITHUB_SHA" ]; then
-            echo "Tag $RELEASE_TAG points to $TAGGED, not to the dispatched commit $GITHUB_SHA"; exit 1
+            echo "Tag $RELEASE_TAG points to $TAGGED, not to the run commit $GITHUB_SHA"; exit 1
+          fi
+          echo "tagged=$TAGGED" >> "$GITHUB_OUTPUT"
+
+      - name: Require the tagged commit on main
+        if: github.event_name == 'release'
+        env:
+          TAGGED: ${{ steps.tagcommit.outputs.tagged }}
+        run: |
+          if ! git merge-base --is-ancestor "$TAGGED" origin/main; then
+            echo "The tagged commit $TAGGED is not on main"; exit 1
           fi
 
       - name: Require main for a real publish

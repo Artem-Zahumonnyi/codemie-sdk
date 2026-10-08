@@ -73,22 +73,30 @@ jobs:
   scan:
     name: Internal references and secrets
     runs-on: ubuntu-latest
+    # The gitleaks action lists the commits of a pull request through the API.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          # The gitleaks action needs the full history to scan the commit range.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Scan for internal references
         run: python3 scripts/scan_internal_refs.py --tree .
 
-      # The gitleaks CLI image is used instead of gitleaks-action, which needs a
-      # license for organization-owned repositories.
       - name: Run gitleaks
-        run: >
-          docker run --rm -v "$PWD:/repo"
-          ghcr.io/gitleaks/gitleaks:v8.24.3
-          detect --source /repo --no-git --config /repo/.gitleaks.toml --redact --verbose
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The action runs `gitleaks detect --redact -v` itself and takes no `args` input.
+          GITLEAKS_CONFIG: .gitleaks.toml
+          # The action default is 8.24.3; use the version of the local scans (Makefile, codemie-ui).
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_ENABLE_COMMENTS: "false"
 
   tooling:
     name: Tooling tests
@@ -98,15 +106,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-
-      # Pinned release binary, checked against its sha256. The planted-secret test
-      # in scripts/tests skips itself when gitleaks is missing.
-      - name: Install gitleaks
-        run: |
-          curl -sSfL -o gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz
-          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  gitleaks.tgz" | sha256sum -c -
-          sudo tar -xzf gitleaks.tgz -C /usr/local/bin gitleaks
-          rm gitleaks.tgz
 
       - name: Install test dependencies
         run: python3 -m pip install pytest pyyaml
