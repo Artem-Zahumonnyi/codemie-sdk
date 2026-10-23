@@ -40,7 +40,7 @@ jobs:
         working-directory: sdk/codemie-python
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -139,7 +139,7 @@ jobs:
       # Only the version script is needed. The registry is checked again here because this job can wait for
       # approval and another release may have landed since `verify`. Checkout comes first: it clears the workspace.
       - name: Check out the version script
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout: scripts/release
