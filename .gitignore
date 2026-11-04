@@ -1,1 +1,8 @@
+.idea/
+dist
+venv
+.venv
 .DS_Store
+__pycache__
+.vscode
+.env
